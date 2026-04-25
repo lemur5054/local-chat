@@ -13,10 +13,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const ROOMS_FILE = path.join(__dirname, 'rooms.json');
 const MAX_MESSAGES = 200;
 
-// Track temporary room states (1-50)
-const tempRoomStates = {};
-
-// Load ONLY persistent rooms (51-99) on startup
+// Persistent rooms (51-99)
 let rooms = {};
 try {
   if (fs.existsSync(ROOMS_FILE)) {
@@ -43,10 +40,15 @@ function savePersistentRooms() {
   }
 }
 
+// Temporary room state (1-50)
+const tempRoomStates = {};      // { room: boolean }
+const tempRoomConfig = {};      // { room: { password: string|null, maxUsers: number } }
+const tempRoomUsers = {};       // { room: Set<socketId> }
+
 io.on('connection', (socket) => {
-  // User tries to join a room
-  socket.on('join_room', (roomId) => {
-    const room = String(roomId).trim();
+  socket.on('join_room', (data) => {
+    const room = String(typeof data === 'object' ? data.room : data).trim();
+    const joinPassword = typeof data === 'object' ? (data.password || '') : '';
     const roomNum = parseInt(room, 10);
 
     if (!/^[1-9]\d?$/.test(room)) {
@@ -54,52 +56,82 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Persistent rooms (51-99): Auto-join
+    // Persistent rooms (51-99)
     if (roomNum >= 51) {
       if (!rooms[room]) rooms[room] = [];
       socket.join(room);
-      socket.emit('room_joined', { room, messages: rooms[room], isPersistent: true });
+      socket.emit('room_joined', { room, messages: rooms[room], isPersistent: true, config: { maxUsers: Infinity } });
       return;
     }
 
-    // Temporary rooms (1-50): Check state
-    if (!tempRoomStates[room]) tempRoomStates[room] = false;
-    
-    if (tempRoomStates[room]) {
-      socket.join(room);
-      socket.emit('room_joined', { room, messages: rooms[room] || [], isPersistent: false });
-    } else {
+    // Temporary rooms (1-50)
+    if (!tempRoomStates[room]) {
       socket.emit('room_waiting', { room });
+      return;
     }
+
+    const config = tempRoomConfig[room];
+    if (!tempRoomUsers[room]) tempRoomUsers[room] = new Set();
+
+    // Password check
+    if (config.password && joinPassword !== config.password) {
+      socket.emit('join_error', '❌ Incorrect password.');
+      return;
+    }
+
+    // User limit check
+    if (tempRoomUsers[room].size >= config.maxUsers) {
+      socket.emit('join_error', '🚫 Room is full.');
+      return;
+    }
+
+    // Join room
+    tempRoomUsers[room].add(socket.id);
+    socket.join(room);
+    io.to(room).emit('user_count', tempRoomUsers[room].size);
+    socket.emit('room_joined', {
+      room,
+      messages: rooms[room] || [],
+      isPersistent: false,
+      config: { hasPassword: !!config.password, maxUsers: config.maxUsers }
+    });
   });
 
-  // Start a temporary room
-  socket.on('start_temp_room', (roomId) => {
-    const room = String(roomId).trim();
+  // Start temporary room with settings
+  socket.on('start_temp_room', (data) => {
+    const { room, password, maxUsers } = data;
     const roomNum = parseInt(room, 10);
     if (roomNum < 1 || roomNum > 50 || tempRoomStates[room]) return;
 
+    const max = Math.min(Math.max(parseInt(maxUsers, 10) || 10, 2), 50);
+
     tempRoomStates[room] = true;
     rooms[room] = [];
+    tempRoomConfig[room] = { password: password || null, maxUsers: max };
+    tempRoomUsers[room] = new Set([socket.id]);
+
     socket.join(room);
-    io.to(room).emit('room_started', { room, messages: [] });
-    socket.emit('room_joined', { room, messages: [], isPersistent: false });
+    io.to(room).emit('room_started', { config: tempRoomConfig[room] });
+    socket.emit('room_joined', {
+      room,
+      messages: [],
+      isPersistent: false,
+      config: { hasPassword: !!password, maxUsers: max }
+    });
   });
 
-  // End a temporary room
+  // End temporary room
   socket.on('end_temp_room', (roomId) => {
     const room = String(roomId).trim();
-    const roomNum = parseInt(room, 10);
-    if (roomNum < 1 || roomNum > 50 || !tempRoomStates[room]) return;
+    if (!tempRoomStates[room]) return;
 
-    // Clear all data
-    delete rooms[room];
-    tempRoomStates[room] = false;
-
-    // Notify everyone & close room
     io.to(room).emit('room_ended', { room });
-    // Clean up sockets from room
     io.in(room).disconnectSockets(true);
+
+    delete rooms[room];
+    delete tempRoomStates[room];
+    delete tempRoomConfig[room];
+    delete tempRoomUsers[room];
   });
 
   // Chat message
@@ -107,9 +139,9 @@ io.on('connection', (socket) => {
     const room = String(data.room).trim();
     const roomNum = parseInt(room, 10);
     if (!data.text || roomNum < 1 || roomNum > 99) return;
+    if (roomNum <= 50 && !tempRoomStates[room]) return;
 
     if (!rooms[room]) rooms[room] = [];
-
     const msg = {
       id: Date.now(),
       username: (data.username || 'Anonymous').slice(0, 20),
@@ -124,7 +156,16 @@ io.on('connection', (socket) => {
     io.to(room).emit('new_message', msg);
   });
 
-  socket.on('disconnect', () => console.log('👋 User disconnected'));
+  socket.on('disconnect', () => {
+    for (const [room, users] of Object.entries(tempRoomUsers)) {
+      if (users.has(socket.id)) {
+        users.delete(socket.id);
+        io.to(room).emit('user_count', users.size);
+        break;
+      }
+    }
+    console.log('👋 User disconnected');
+  });
 });
 
 const PORT = process.env.PORT || 3000;
