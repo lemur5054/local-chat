@@ -41,11 +41,12 @@ function savePersistentRooms() {
 }
 
 // Temporary room state (1-50)
-const tempRoomStates = {};      // { room: boolean }
-const tempRoomConfig = {};      // { room: { password: string|null, maxUsers: number } }
-const tempRoomUsers = {};       // { room: Set<socketId> }
+const tempRoomStates = {};      
+const tempRoomConfig = {};      
+const tempRoomUsers = {};       
 
 io.on('connection', (socket) => {
+  // Join room
   socket.on('join_room', (data) => {
     const room = String(typeof data === 'object' ? data.room : data).trim();
     const joinPassword = typeof data === 'object' ? (data.password || '') : '';
@@ -75,12 +76,12 @@ io.on('connection', (socket) => {
 
     // Password check
     if (config.password && joinPassword !== config.password) {
-      socket.emit('join_error', '❌ Incorrect password.');
+      socket.emit('join_password_required', { room });
       return;
     }
 
     // User limit check
-    if (tempRoomUsers[room].size >= config.maxUsers) {
+    if (config.maxUsers !== Infinity && tempRoomUsers[room].size >= config.maxUsers) {
       socket.emit('join_error', '🚫 Room is full.');
       return;
     }
@@ -97,13 +98,14 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Start temporary room with settings
+  // Start temporary room with inline settings
   socket.on('start_temp_room', (data) => {
     const { room, password, maxUsers } = data;
     const roomNum = parseInt(room, 10);
     if (roomNum < 1 || roomNum > 50 || tempRoomStates[room]) return;
 
-    const max = Math.min(Math.max(parseInt(maxUsers, 10) || 10, 2), 50);
+    // 0 or missing = No Limit (Infinity)
+    const max = maxUsers > 0 ? Math.min(parseInt(maxUsers, 10), 50) : Infinity;
 
     tempRoomStates[room] = true;
     rooms[room] = [];
