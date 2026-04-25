@@ -1,29 +1,54 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Local Chat</title>
   <style>
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-    #app { max-width: 600px; margin: 0 auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
-    header { background: #0066cc; color: white; padding: 12px 16px; font-weight: bold; }
-    #messages { height: 400px; overflow-y: auto; padding: 10px; background: #fafafa; }
-    .msg { margin: 6px 0; padding: 8px; background: #e9ecef; border-radius: 6px; }
-    .msg .user { font-weight: 600; color: #333; }
-    .msg .time { font-size: 0.75rem; color: #666; margin-left: 8px; }
-    .msg .text { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
-    #form { display: flex; padding: 10px; border-top: 1px solid #ddd; background: #fff; }
-    #username { width: 100px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-    #input { flex: 1; padding: 8px; margin-left: 8px; border: 1px solid #ccc; border-radius: 4px; }
-    #send { padding: 8px 16px; margin-left: 8px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    #send:hover { background: #0052a3; }
+    :root {
+      --bg: #f5f7fa; --card-bg: #ffffff; --text: #1a1a1a; --text-secondary: #666;
+      --border: #e2e8f0; --accent: #3b82f6; --accent-hover: #2563eb;
+      --msg-bg: #f1f5f9; --shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    [data-theme="dark"] {
+      --bg: #0f172a; --card-bg: #1e293b; --text: #f1f5f9; --text-secondary: #94a3b8;
+      --border: #334155; --accent: #60a5fa; --accent-hover: #3b82f6;
+      --msg-bg: #334155; --shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; padding: 20px; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
+    #app { width: 100%; max-width: 650px; background: var(--card-bg); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; height: 90vh; max-height: 800px; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--accent); color: white; }
+    header h1 { font-size: 1.25rem; font-weight: 600; }
+    #theme-toggle { background: rgba(255,255,255,0.2); border: none; color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    #theme-toggle:hover { background: rgba(255,255,255,0.3); }
+    #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
+    .msg { display: flex; gap: 10px; padding: 10px; background: var(--msg-bg); border-radius: 10px; align-items: flex-start; transition: background 0.2s; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; color: white; font-size: 0.85rem; flex-shrink: 0; text-transform: uppercase; }
+    .msg-content { flex: 1; min-width: 0; }
+    .msg-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+    .username { font-weight: 600; color: var(--text); }
+    .timestamp { font-size: 0.75rem; color: var(--text-secondary); cursor: help; }
+    .text { color: var(--text); line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+    #form { display: flex; padding: 12px; border-top: 1px solid var(--border); background: var(--card-bg); gap: 8px; }
+    #username { width: 110px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+    #input { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+    #send { padding: 10px 18px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; transition: background 0.2s; }
+    #send:hover { background: var(--accent-hover); }
+    #send:active { transform: scale(0.98); }
+    @media (max-width: 600px) {
+      #app { height: 100vh; max-height: none; border-radius: 0; }
+      body { padding: 0; }
+      #username { width: 90px; }
+    }
   </style>
 </head>
 <body>
   <div id="app">
-    <header>💬 Local Chat Room</header>
+    <header>
+      <h1>💬 Local Chat</h1>
+      <button id="theme-toggle">🌙 Dark</button>
+    </header>
     <div id="messages"></div>
     <form id="form">
       <input id="username" type="text" placeholder="Name" maxlength="15" />
@@ -38,33 +63,60 @@
     const messages = document.getElementById('messages');
     const form = document.getElementById('form');
     const input = document.getElementById('input');
-    const username = document.getElementById('username');
+    const usernameInput = document.getElementById('username');
+    const themeToggle = document.getElementById('theme-toggle');
 
-    // Auto-assign random username if empty
-    if (!username.value) {
-      username.value = 'User' + Math.floor(Math.random() * 9000 + 1000);
+    // Theme handling
+    const savedTheme = localStorage.getItem('chat-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    themeToggle.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('chat-theme', next);
+      updateThemeButton(next);
+    });
+
+    function updateThemeButton(theme) {
+      themeToggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
     }
 
-    // Load chat history on connect
+    // Auto username
+    if (!usernameInput.value) {
+      usernameInput.value = 'User' + Math.floor(Math.random() * 9000 + 1000);
+    }
+
+    // Socket events
     socket.on('load_messages', (msgs) => {
       messages.innerHTML = '';
       msgs.forEach(renderMessage);
-      messages.scrollTop = messages.scrollHeight;
+      scrollToBottom();
     });
 
-    // Listen for new messages
     socket.on('new_message', (msg) => {
       renderMessage(msg);
-      messages.scrollTop = messages.scrollHeight;
+      scrollToBottom();
     });
 
     function renderMessage(msg) {
       const div = document.createElement('div');
       div.className = 'msg';
+      const initials = msg.username.slice(0, 2).toUpperCase();
+      const color = stringToColor(msg.username);
+      const relativeTime = getRelativeTime(msg.timestamp);
+      const fullTime = new Date(msg.timestamp).toLocaleString();
+
       div.innerHTML = `
-        <span class="user">${escapeHtml(msg.username)}</span>
-        <span class="time">${new Date(msg.timestamp).toLocaleTimeString()}</span>
-        <span class="text">${escapeHtml(msg.text)}</span>
+        <div class="avatar" style="background:${color}">${initials}</div>
+        <div class="msg-content">
+          <div class="msg-header">
+            <span class="username">${escapeHtml(msg.username)}</span>
+            <span class="timestamp" title="${fullTime}">${relativeTime}</span>
+          </div>
+          <span class="text">${escapeHtml(msg.text)}</span>
+        </div>
       `;
       messages.appendChild(div);
     }
@@ -75,9 +127,44 @@
       return div.innerHTML;
     }
 
+    function scrollToBottom() {
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function stringToColor(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const h = Math.abs(hash) % 360;
+      return `hsl(${h}, 65%, 55%)`;
+    }
+
+    function getRelativeTime(isoString) {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHr = Math.floor(diffMin / 60);
+      if (diffSec < 10) return 'just now';
+      if (diffSec < 60) return `${diffSec}s`;
+      if (diffMin < 60) return `${diffMin}m`;
+      if (diffHr < 24) return `${diffHr}h`;
+      return date.toLocaleDateString();
+    }
+
+    // Refresh relative times every 30s
+    setInterval(() => {
+      document.querySelectorAll('.timestamp').forEach(el => {
+        const fullTime = el.title;
+        if (fullTime) el.textContent = getRelativeTime(fullTime);
+      });
+    }, 30000);
+
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const user = username.value.trim() || 'Anonymous';
+      const user = usernameInput.value.trim() || 'Anonymous';
       const text = input.value.trim();
       if (text) {
         socket.emit('chat_message', { username: user, text });
