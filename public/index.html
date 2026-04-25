@@ -9,13 +9,13 @@
       --bg: #f5f7fa; --card-bg: #ffffff; --text: #1a1a1a; --text-secondary: #666;
       --border: #e2e8f0; --accent: #3b82f6; --accent-hover: #2563eb;
       --msg-bg: #f1f5f9; --shadow: 0 4px 12px rgba(0,0,0,0.08);
-      --temp-badge: #f59e0b; --persist-badge: #10b981;
+      --temp-badge: #f59e0b; --persist-badge: #10b981; --danger: #ef4444;
     }
     [data-theme="dark"] {
       --bg: #0f172a; --card-bg: #1e293b; --text: #f1f5f9; --text-secondary: #94a3b8;
       --border: #334155; --accent: #60a5fa; --accent-hover: #3b82f6;
       --msg-bg: #334155; --shadow: 0 4px 12px rgba(0,0,0,0.3);
-      --temp-badge: #d97706; --persist-badge: #059669;
+      --temp-badge: #d97706; --persist-badge: #059669; --danger: #f87171;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; padding: 20px; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
@@ -23,12 +23,14 @@
     .screen { width: 100%; max-width: 650px; background: var(--card-bg); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; height: 90vh; max-height: 800px; }
     .hidden { display: none !important; }
 
-    #room-select { padding: 40px 24px; align-items: center; justify-content: center; text-align: center; }
-    #room-select h2 { margin-bottom: 24px; color: var(--text); }
-    #join-form { display: flex; flex-direction: column; gap: 12px; max-width: 300px; margin: 0 auto; }
+    #room-select, #room-waiting { padding: 40px 24px; align-items: center; justify-content: center; text-align: center; }
+    #room-select h2, #room-waiting h2 { margin-bottom: 24px; color: var(--text); }
+    #join-form, #waiting-controls { display: flex; flex-direction: column; gap: 12px; max-width: 300px; margin: 0 auto; }
     .input-field { padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 1rem; background: var(--bg); color: var(--text); text-align: center; }
-    #room-btn { padding: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem; margin-top: 4px; }
-    #room-btn:hover { background: var(--accent-hover); }
+    .btn { padding: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem; margin-top: 4px; transition: background 0.2s; }
+    .btn:hover { background: var(--accent-hover); }
+    .btn.connect { background: #10b981; } .btn.connect:hover { background: #059669; }
+    .btn.end { background: var(--danger); font-size: 0.85rem; padding: 6px 12px; }
     #join-error { color: #ef4444; margin-top: 10px; font-size: 0.85rem; min-height: 20px; }
     .hint { color: var(--text-secondary); font-size: 0.8rem; margin-top: 16px; }
 
@@ -67,10 +69,19 @@
     <form id="join-form">
       <input type="text" id="name-input" class="input-field" placeholder="Your Name" maxlength="15" required />
       <input type="number" id="room-input" class="input-field" min="1" max="99" required placeholder="Room Number (1-99)" />
-      <button type="submit" id="room-btn">Enter Chat</button>
+      <button type="submit" class="btn">Enter Chat</button>
     </form>
     <div id="join-error"></div>
-    <p class="hint">Rooms 1-50: 🕒 Temporary (cleared on restart)<br>Rooms 51-99: 💾 Saved History</p>
+    <p class="hint">Rooms 1-50: 🕒 Temporary (requires Connect)<br>Rooms 51-99: 💾 Auto-Saved History</p>
+  </div>
+
+  <!-- Waiting Screen (Temp Rooms) -->
+  <div id="room-waiting" class="screen hidden">
+    <h2>📡 Room #<span id="waiting-room-num"></span></h2>
+    <p>This room is currently offline. Be the first to connect, or wait for someone else.</p>
+    <div id="waiting-controls">
+      <button id="connect-btn" class="btn connect">🔗 Connect Chat</button>
+    </div>
   </div>
 
   <!-- Chat Screen -->
@@ -81,7 +92,10 @@
         <span id="user-tag" class="user-tag"></span>
         <span id="room-badge" class="badge"></span>
       </div>
-      <button id="theme-toggle">🌙 Dark</button>
+      <div class="header-right" style="display:flex; gap:8px; align-items:center;">
+        <button id="end-room-btn" class="btn end hidden">🔴 End Room</button>
+        <button id="theme-toggle">🌙 Dark</button>
+      </div>
     </header>
     <div id="messages"></div>
     <form id="form">
@@ -94,6 +108,7 @@
   <script>
     const socket = io();
     const roomSelect = document.getElementById('room-select');
+    const roomWaiting = document.getElementById('room-waiting');
     const app = document.getElementById('app');
     const joinForm = document.getElementById('join-form');
     const nameInput = document.getElementById('name-input');
@@ -106,26 +121,24 @@
     const roomTitle = document.getElementById('room-title');
     const userTag = document.getElementById('user-tag');
     const roomBadge = document.getElementById('room-badge');
+    const connectBtn = document.getElementById('connect-btn');
+    const endRoomBtn = document.getElementById('end-room-btn');
 
     let currentRoom = null;
     let currentUser = localStorage.getItem('chat-user') || '';
     if (currentUser) nameInput.value = currentUser;
 
-    // Theme handling
+    // Theme
     const savedTheme = localStorage.getItem('chat-theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
     updateThemeButton(savedTheme);
-
     themeToggle.addEventListener('click', () => {
       const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
       localStorage.setItem('chat-theme', next);
       updateThemeButton(next);
     });
-
-    function updateThemeButton(theme) {
-      themeToggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
-    }
+    function updateThemeButton(theme) { themeToggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark'; }
 
     // Join Flow
     joinForm.addEventListener('submit', (e) => {
@@ -135,14 +148,31 @@
       joinError.textContent = '';
 
       if (!name) { joinError.textContent = '⚠️ Please enter a display name.'; return; }
-      if (!/^[1-9]\d?$/.test(room)) {
-        joinError.textContent = '⚠️ Room must be a number between 1 and 99.'; return;
-      }
+      if (!/^[1-9]\d?$/.test(room)) { joinError.textContent = '⚠️ Room must be 1-99.'; return; }
 
       currentUser = name;
       currentRoom = room;
       localStorage.setItem('chat-user', name);
       socket.emit('join_room', currentRoom);
+    });
+
+    socket.on('join_error', (msg) => joinError.textContent = `❌ ${msg}`);
+
+    // Temp room waiting
+    socket.on('room_waiting', ({ room }) => {
+      document.getElementById('waiting-room-num').textContent = room;
+      roomSelect.classList.add('hidden');
+      app.classList.add('hidden');
+      roomWaiting.classList.remove('hidden');
+    });
+
+    connectBtn.addEventListener('click', () => {
+      if (currentRoom) socket.emit('start_temp_room', currentRoom);
+    });
+
+    socket.on('room_started', () => {
+      roomWaiting.classList.add('hidden');
+      socket.emit('join_room', currentRoom); // Re-join now that it's active
     });
 
     socket.on('room_joined', ({ room, messages: msgs, isPersistent }) => {
@@ -153,7 +183,9 @@
       roomBadge.textContent = isPersistent ? '💾 Saved' : '🕒 Temporary';
       roomBadge.className = `badge ${isPersistent ? 'persist' : 'temp'}`;
       
-      roomSelect.classList.add('hidden');
+      endRoomBtn.classList.toggle('hidden', !!isPersistent);
+
+      roomWaiting.classList.add('hidden');
       app.classList.remove('hidden');
       
       messages.innerHTML = '';
@@ -161,12 +193,18 @@
       scrollToBottom();
     });
 
-    socket.on('join_error', (msg) => joinError.textContent = `❌ ${msg}`);
-
-    socket.on('new_message', (msg) => {
-      renderMessage(msg);
-      scrollToBottom();
+    endRoomBtn.addEventListener('click', () => {
+      if (confirm('⚠️ End this room? All messages will be permanently deleted.')) {
+        socket.emit('end_temp_room', currentRoom);
+      }
     });
+
+    socket.on('room_ended', () => {
+      alert('🔴 Room has been closed and all data cleared.');
+      resetUI();
+    });
+
+    socket.on('new_message', (msg) => { renderMessage(msg); scrollToBottom(); });
 
     function renderMessage(msg) {
       const div = document.createElement('div');
@@ -175,7 +213,6 @@
       const color = stringToColor(msg.username);
       const relativeTime = getRelativeTime(msg.timestamp);
       const fullTime = new Date(msg.timestamp).toLocaleString();
-
       div.innerHTML = `
         <div class="avatar" style="background:${color}">${initials}</div>
         <div class="msg-content">
@@ -184,56 +221,29 @@
             <span class="timestamp" title="${fullTime}">${relativeTime}</span>
           </div>
           <span class="text">${escapeHtml(msg.text)}</span>
-        </div>
-      `;
+        </div>`;
       messages.appendChild(div);
     }
 
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    function scrollToBottom() {
-      messages.scrollTop = messages.scrollHeight;
-    }
-
-    function stringToColor(str) {
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-      return `hsl(${Math.abs(hash) % 360}, 65%, 55%)`;
-    }
-
-    function getRelativeTime(isoString) {
-      const date = new Date(isoString);
-      const now = new Date();
-      const diffSec = Math.floor((now - date) / 1000);
-      const diffMin = Math.floor(diffSec / 60);
-      const diffHr = Math.floor(diffMin / 60);
-      if (diffSec < 10) return 'just now';
-      if (diffSec < 60) return `${diffSec}s`;
-      if (diffMin < 60) return `${diffMin}m`;
-      if (diffHr < 24) return `${diffHr}h`;
-      return date.toLocaleDateString();
-    }
-
-    setInterval(() => {
-      document.querySelectorAll('.timestamp').forEach(el => {
-        if (el.title) el.textContent = getRelativeTime(el.title);
-      });
-    }, 30000);
+    function escapeHtml(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
+    function scrollToBottom() { messages.scrollTop = messages.scrollHeight; }
+    function stringToColor(str) { let h = 0; for(let i=0;i<str.length;i++) h=str.charCodeAt(i)+((h<<5)-h); return `hsl(${Math.abs(h)%360},65%,55%)`; }
+    function getRelativeTime(iso) { const d=new Date(iso), n=new Date(), s=Math.floor((n-d)/1000), m=Math.floor(s/60), h=Math.floor(m/60); return s<10?'just now':s<60?`${s}s`:m<60?`${m}m`:h<24?`${h}h`:d.toLocaleDateString(); }
+    setInterval(()=>document.querySelectorAll('.timestamp').forEach(el=>{if(el.title)el.textContent=getRelativeTime(el.title)}),30000);
 
     chatForm.addEventListener('submit', (e) => {
       e.preventDefault();
       if (!currentRoom || !currentUser) return;
       const text = input.value.trim();
-      if (text) {
-        socket.emit('chat_message', { room: currentRoom, username: currentUser, text });
-        input.value = '';
-        input.focus();
-      }
+      if (text) { socket.emit('chat_message', { room: currentRoom, username: currentUser, text }); input.value = ''; input.focus(); }
     });
+
+    function resetUI() {
+      app.classList.add('hidden');
+      roomWaiting.classList.add('hidden');
+      roomSelect.classList.remove('hidden');
+      currentRoom = null;
+    }
   </script>
 </body>
 </html>
