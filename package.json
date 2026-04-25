@@ -1,7 +1,7 @@
 {
-  "name": "local-chat",
+  "name": "room-chat",
   "version": "1.0.0",
-  "description": "Self-contained real-time chat",
+  "description": "Multi-room real-time chat",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
