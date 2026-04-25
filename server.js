@@ -2,36 +2,54 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serve static files from /public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory message storage (no external DB)
-const messages = [];
-const MAX_MESSAGES = 200; // Prevent memory bloat
+const MESSAGES_FILE = path.join(__dirname, 'messages.json');
+const MAX_MESSAGES = 200;
+
+// Load messages on startup
+let messages = [];
+try {
+  if (fs.existsSync(MESSAGES_FILE)) {
+    messages = JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
+  }
+} catch (err) {
+  console.warn('⚠️ Could not load messages.json, starting fresh:', err.message);
+}
+
+// Save messages to disk
+function saveMessages() {
+  try {
+    fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages), 'utf8');
+  } catch (err) {
+    console.error('❌ Failed to save messages:', err.message);
+  }
+}
 
 io.on('connection', (socket) => {
-  // Send existing messages to newly connected users
+  // Send history to new users
   socket.emit('load_messages', messages);
 
-  // Handle incoming chat messages
   socket.on('chat_message', (data) => {
     if (!data || !data.text) return;
 
     const msg = {
       id: Date.now(),
       username: (data.username || 'Anonymous').slice(0, 20),
-      text: data.text.slice(0, 500), // Limit message length
+      text: data.text.slice(0, 500),
       timestamp: new Date().toISOString()
     };
 
     messages.push(msg);
-    if (messages.length > MAX_MESSAGES) messages.shift(); // Keep only latest
+    if (messages.length > MAX_MESSAGES) messages.shift();
 
+    saveMessages();
     io.emit('new_message', msg);
   });
 
