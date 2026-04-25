@@ -13,6 +13,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 const ROOMS_FILE = path.join(__dirname, 'rooms.json');
 const MAX_MESSAGES = 200;
 
+// Track temporary room states (1-50)
+const tempRoomStates = {};
+
 // Load ONLY persistent rooms (51-99) on startup
 let rooms = {};
 try {
@@ -41,6 +44,7 @@ function savePersistentRooms() {
 }
 
 io.on('connection', (socket) => {
+  // User tries to join a room
   socket.on('join_room', (roomId) => {
     const room = String(roomId).trim();
     const roomNum = parseInt(room, 10);
@@ -50,19 +54,59 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (!rooms[room]) rooms[room] = [];
-    socket.join(room);
+    // Persistent rooms (51-99): Auto-join
+    if (roomNum >= 51) {
+      if (!rooms[room]) rooms[room] = [];
+      socket.join(room);
+      socket.emit('room_joined', { room, messages: rooms[room], isPersistent: true });
+      return;
+    }
+
+    // Temporary rooms (1-50): Check state
+    if (!tempRoomStates[room]) tempRoomStates[room] = false;
     
-    socket.emit('room_joined', { 
-      room, 
-      messages: rooms[room],
-      isPersistent: roomNum >= 51 
-    });
+    if (tempRoomStates[room]) {
+      socket.join(room);
+      socket.emit('room_joined', { room, messages: rooms[room] || [], isPersistent: false });
+    } else {
+      socket.emit('room_waiting', { room });
+    }
   });
 
+  // Start a temporary room
+  socket.on('start_temp_room', (roomId) => {
+    const room = String(roomId).trim();
+    const roomNum = parseInt(room, 10);
+    if (roomNum < 1 || roomNum > 50 || tempRoomStates[room]) return;
+
+    tempRoomStates[room] = true;
+    rooms[room] = [];
+    socket.join(room);
+    io.to(room).emit('room_started', { room, messages: [] });
+    socket.emit('room_joined', { room, messages: [], isPersistent: false });
+  });
+
+  // End a temporary room
+  socket.on('end_temp_room', (roomId) => {
+    const room = String(roomId).trim();
+    const roomNum = parseInt(room, 10);
+    if (roomNum < 1 || roomNum > 50 || !tempRoomStates[room]) return;
+
+    // Clear all data
+    delete rooms[room];
+    tempRoomStates[room] = false;
+
+    // Notify everyone & close room
+    io.to(room).emit('room_ended', { room });
+    // Clean up sockets from room
+    io.in(room).disconnectSockets(true);
+  });
+
+  // Chat message
   socket.on('chat_message', (data) => {
     const room = String(data.room).trim();
-    if (!data.text || !/^[1-9]\d?$/.test(room)) return;
+    const roomNum = parseInt(room, 10);
+    if (!data.text || roomNum < 1 || roomNum > 99) return;
 
     if (!rooms[room]) rooms[room] = [];
 
@@ -76,7 +120,7 @@ io.on('connection', (socket) => {
     rooms[room].push(msg);
     if (rooms[room].length > MAX_MESSAGES) rooms[room].shift();
 
-    if (parseInt(room, 10) >= 51) savePersistentRooms();
+    if (roomNum >= 51) savePersistentRooms();
     io.to(room).emit('new_message', msg);
   });
 
