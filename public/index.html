@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Local Chat</title>
+  <title>Room Chat</title>
   <style>
     :root {
       --bg: #f5f7fa; --card-bg: #ffffff; --text: #1a1a1a; --text-secondary: #666;
@@ -16,8 +16,21 @@
       --msg-bg: #334155; --shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; padding: 20px; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
-    #app { width: 100%; max-width: 650px; background: var(--card-bg); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; height: 90vh; max-height: 800px; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; padding: 20px; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
+    
+    .screen { width: 100%; max-width: 650px; background: var(--card-bg); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; height: 90vh; max-height: 800px; }
+    .hidden { display: none !important; }
+
+    /* Room Selection */
+    #room-select { padding: 40px; align-items: center; justify-content: center; text-align: center; }
+    #room-select h2 { margin-bottom: 20px; color: var(--text); }
+    #room-form { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    #room-input { width: 120px; padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 1.1rem; text-align: center; background: var(--bg); color: var(--text); }
+    #room-btn { padding: 12px 24px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem; }
+    #room-btn:hover { background: var(--accent-hover); }
+    #join-error { color: #ef4444; margin-top: 12px; font-size: 0.9rem; min-height: 20px; }
+
+    /* Chat UI */
     header { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--accent); color: white; }
     header h1 { font-size: 1.25rem; font-weight: 600; }
     #theme-toggle { background: rgba(255,255,255,0.2); border: none; color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
@@ -37,16 +50,27 @@
     #send:hover { background: var(--accent-hover); }
     #send:active { transform: scale(0.98); }
     @media (max-width: 600px) {
-      #app { height: 100vh; max-height: none; border-radius: 0; }
+      .screen { height: 100vh; max-height: none; border-radius: 0; }
       body { padding: 0; }
       #username { width: 90px; }
     }
   </style>
 </head>
 <body>
-  <div id="app">
+  <!-- Room Selection Screen -->
+  <div id="room-select" class="screen">
+    <h2>🔢 Enter Room Number</h2>
+    <form id="room-form">
+      <input type="number" id="room-input" min="2" max="99" required placeholder="2-99" />
+      <button type="submit" id="room-btn">Join Chat</button>
+    </form>
+    <div id="join-error"></div>
+  </div>
+
+  <!-- Main Chat Screen -->
+  <div id="app" class="screen hidden">
     <header>
-      <h1>💬 Local Chat</h1>
+      <h1 id="room-title">💬 Chat Room</h1>
       <button id="theme-toggle">🌙 Dark</button>
     </header>
     <div id="messages"></div>
@@ -60,11 +84,19 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
+    const roomSelect = document.getElementById('room-select');
+    const app = document.getElementById('app');
+    const roomForm = document.getElementById('room-form');
+    const roomInput = document.getElementById('room-input');
+    const joinError = document.getElementById('join-error');
     const messages = document.getElementById('messages');
-    const form = document.getElementById('form');
+    const chatForm = document.getElementById('form');
     const input = document.getElementById('input');
     const usernameInput = document.getElementById('username');
     const themeToggle = document.getElementById('theme-toggle');
+    const roomTitle = document.getElementById('room-title');
+
+    let currentRoom = null;
 
     // Theme handling
     const savedTheme = localStorage.getItem('chat-theme') || 'light';
@@ -83,16 +115,42 @@
       themeToggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
     }
 
-    // Auto username
-    if (!usernameInput.value) {
-      usernameInput.value = 'User' + Math.floor(Math.random() * 9000 + 1000);
-    }
+    // Room Join Flow
+    roomForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const room = roomInput.value.trim();
+      joinError.textContent = '';
+      
+      if (!/^[2-9]\d?$/.test(room)) {
+        joinError.textContent = '⚠️ Please enter a number between 2 and 99.';
+        return;
+      }
 
-    // Socket events
-    socket.on('load_messages', (msgs) => {
+      currentRoom = room;
+      socket.emit('join_room', currentRoom);
+    });
+
+    // Server confirms room join
+    socket.on('room_joined', ({ room, messages: msgs }) => {
+      currentRoom = room;
+      roomTitle.textContent = `💬 Room #${room}`;
+      
+      // Switch screens
+      roomSelect.classList.add('hidden');
+      app.classList.remove('hidden');
+      
+      // Load history
       messages.innerHTML = '';
       msgs.forEach(renderMessage);
       scrollToBottom();
+      
+      if (!usernameInput.value) {
+        usernameInput.value = 'User' + Math.floor(Math.random() * 9000 + 1000);
+      }
+    });
+
+    socket.on('join_error', (msg) => {
+      joinError.textContent = `❌ ${msg}`;
     });
 
     socket.on('new_message', (msg) => {
@@ -136,15 +194,13 @@
       for (let i = 0; i < str.length; i++) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
       }
-      const h = Math.abs(hash) % 360;
-      return `hsl(${h}, 65%, 55%)`;
+      return `hsl(${Math.abs(hash) % 360}, 65%, 55%)`;
     }
 
     function getRelativeTime(isoString) {
       const date = new Date(isoString);
       const now = new Date();
-      const diffMs = now - date;
-      const diffSec = Math.floor(diffMs / 1000);
+      const diffSec = Math.floor((now - date) / 1000);
       const diffMin = Math.floor(diffSec / 60);
       const diffHr = Math.floor(diffMin / 60);
       if (diffSec < 10) return 'just now';
@@ -154,20 +210,19 @@
       return date.toLocaleDateString();
     }
 
-    // Refresh relative times every 30s
     setInterval(() => {
       document.querySelectorAll('.timestamp').forEach(el => {
-        const fullTime = el.title;
-        if (fullTime) el.textContent = getRelativeTime(fullTime);
+        if (el.title) el.textContent = getRelativeTime(el.title);
       });
     }, 30000);
 
-    form.addEventListener('submit', (e) => {
+    chatForm.addEventListener('submit', (e) => {
       e.preventDefault();
+      if (!currentRoom) return;
       const user = usernameInput.value.trim() || 'Anonymous';
       const text = input.value.trim();
       if (text) {
-        socket.emit('chat_message', { username: user, text });
+        socket.emit('chat_message', { room: currentRoom, username: user, text });
         input.value = '';
         input.focus();
       }
