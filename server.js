@@ -13,53 +13,68 @@ app.use(express.static(path.join(__dirname, 'public')));
 const ROOMS_FILE = path.join(__dirname, 'rooms.json');
 const MAX_MESSAGES = 200;
 
-// Load all rooms from disk
+// Load ONLY persistent rooms (51-99) on startup
 let rooms = {};
 try {
   if (fs.existsSync(ROOMS_FILE)) {
-    rooms = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
+    const rawData = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
+    for (const [key, msgs] of Object.entries(rawData)) {
+      const num = parseInt(key, 10);
+      if (num >= 51 && num <= 99) {
+        rooms[key] = msgs;
+      }
+    }
   }
 } catch (err) {
-  console.warn('⚠️ Could not load rooms.json, starting fresh:', err.message);
+  console.warn('⚠️ Could not load rooms.json:', err.message);
 }
 
-// Save rooms to disk
-function saveRooms() {
+// Save ONLY rooms 51-99 to disk
+function savePersistentRooms() {
   try {
-    fs.writeFileSync(ROOMS_FILE, JSON.stringify(rooms), 'utf8');
+    const persistentOnly = {};
+    for (const [key, msgs] of Object.entries(rooms)) {
+      const num = parseInt(key, 10);
+      if (num >= 51 && num <= 99) {
+        persistentOnly[key] = msgs;
+      }
+    }
+    fs.writeFileSync(ROOMS_FILE, JSON.stringify(persistentOnly), 'utf8');
   } catch (err) {
     console.error('❌ Failed to save rooms:', err.message);
   }
 }
 
 io.on('connection', (socket) => {
-  // User joins a room
   socket.on('join_room', (roomId) => {
     const room = String(roomId).trim();
-    
-    // Validate: must be 2-99
-    if (!/^[2-9]\d?$/.test(room)) {
-      socket.emit('join_error', 'Invalid room. Use numbers 2-99.');
+    const roomNum = parseInt(room, 10);
+
+    // Validate 1-99
+    if (!room || isNaN(roomNum) || roomNum < 1 || roomNum > 99) {
+      socket.emit('join_error', 'Invalid room. Use numbers 1-99.');
       return;
     }
 
-    // Initialize room if it doesn't exist
+    // Initialize room if needed
     if (!rooms[room]) rooms[room] = [];
 
-    // Join Socket.IO room
     socket.join(room);
-    
-    // Send room history & confirm join
-    socket.emit('room_joined', { room, messages: rooms[room] });
-    console.log(`✅ User joined Room #${room}`);
+    const isPersistent = roomNum >= 51;
+    socket.emit('room_joined', { 
+      room, 
+      messages: rooms[room],
+      isPersistent 
+    });
+    console.log(`✅ User joined Room #${room} (${isPersistent ? '💾 Persistent' : '🕒 Temporary'})`);
   });
 
-  // User sends a message
   socket.on('chat_message', (data) => {
     const room = String(data.room).trim();
-    if (!data.text || !/^[2-9]\d?$/.test(room)) return;
+    const roomNum = parseInt(room, 10);
+    
+    if (!data.text || isNaN(roomNum) || roomNum < 1 || roomNum > 99) return;
 
-    // Ensure room exists
     if (!rooms[room]) rooms[room] = [];
 
     const msg = {
@@ -69,13 +84,14 @@ io.on('connection', (socket) => {
       timestamp: new Date().toISOString()
     };
 
-    // Store & cap messages
     rooms[room].push(msg);
     if (rooms[room].length > MAX_MESSAGES) rooms[room].shift();
 
-    saveRooms();
-    
-    // Broadcast only to this room
+    // Only save to disk for rooms 51-99
+    if (roomNum >= 51) {
+      savePersistentRooms();
+    }
+
     io.to(room).emit('new_message', msg);
   });
 
