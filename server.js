@@ -10,34 +10,57 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MESSAGES_FILE = path.join(__dirname, 'messages.json');
+const ROOMS_FILE = path.join(__dirname, 'rooms.json');
 const MAX_MESSAGES = 200;
 
-// Load messages on startup
-let messages = [];
+// Load all rooms from disk
+let rooms = {};
 try {
-  if (fs.existsSync(MESSAGES_FILE)) {
-    messages = JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
+  if (fs.existsSync(ROOMS_FILE)) {
+    rooms = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
   }
 } catch (err) {
-  console.warn('⚠️ Could not load messages.json, starting fresh:', err.message);
+  console.warn('⚠️ Could not load rooms.json, starting fresh:', err.message);
 }
 
-// Save messages to disk
-function saveMessages() {
+// Save rooms to disk
+function saveRooms() {
   try {
-    fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages), 'utf8');
+    fs.writeFileSync(ROOMS_FILE, JSON.stringify(rooms), 'utf8');
   } catch (err) {
-    console.error('❌ Failed to save messages:', err.message);
+    console.error('❌ Failed to save rooms:', err.message);
   }
 }
 
 io.on('connection', (socket) => {
-  // Send history to new users
-  socket.emit('load_messages', messages);
+  // User joins a room
+  socket.on('join_room', (roomId) => {
+    const room = String(roomId).trim();
+    
+    // Validate: must be 2-99
+    if (!/^[2-9]\d?$/.test(room)) {
+      socket.emit('join_error', 'Invalid room. Use numbers 2-99.');
+      return;
+    }
 
+    // Initialize room if it doesn't exist
+    if (!rooms[room]) rooms[room] = [];
+
+    // Join Socket.IO room
+    socket.join(room);
+    
+    // Send room history & confirm join
+    socket.emit('room_joined', { room, messages: rooms[room] });
+    console.log(`✅ User joined Room #${room}`);
+  });
+
+  // User sends a message
   socket.on('chat_message', (data) => {
-    if (!data || !data.text) return;
+    const room = String(data.room).trim();
+    if (!data.text || !/^[2-9]\d?$/.test(room)) return;
+
+    // Ensure room exists
+    if (!rooms[room]) rooms[room] = [];
 
     const msg = {
       id: Date.now(),
@@ -46,15 +69,18 @@ io.on('connection', (socket) => {
       timestamp: new Date().toISOString()
     };
 
-    messages.push(msg);
-    if (messages.length > MAX_MESSAGES) messages.shift();
+    // Store & cap messages
+    rooms[room].push(msg);
+    if (rooms[room].length > MAX_MESSAGES) rooms[room].shift();
 
-    saveMessages();
-    io.emit('new_message', msg);
+    saveRooms();
+    
+    // Broadcast only to this room
+    io.to(room).emit('new_message', msg);
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected');
+    console.log('👋 User disconnected');
   });
 });
 
