@@ -9,11 +9,13 @@
       --bg: #f5f7fa; --card-bg: #ffffff; --text: #1a1a1a; --text-secondary: #666;
       --border: #e2e8f0; --accent: #3b82f6; --accent-hover: #2563eb;
       --msg-bg: #f1f5f9; --shadow: 0 4px 12px rgba(0,0,0,0.08);
+      --temp-badge: #f59e0b; --persist-badge: #10b981;
     }
     [data-theme="dark"] {
       --bg: #0f172a; --card-bg: #1e293b; --text: #f1f5f9; --text-secondary: #94a3b8;
       --border: #334155; --accent: #60a5fa; --accent-hover: #3b82f6;
       --msg-bg: #334155; --shadow: 0 4px 12px rgba(0,0,0,0.3);
+      --temp-badge: #d97706; --persist-badge: #059669;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; padding: 20px; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
@@ -21,18 +23,20 @@
     .screen { width: 100%; max-width: 650px; background: var(--card-bg); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; height: 90vh; max-height: 800px; }
     .hidden { display: none !important; }
 
-    /* Room Selection */
-    #room-select { padding: 40px; align-items: center; justify-content: center; text-align: center; }
-    #room-select h2 { margin-bottom: 20px; color: var(--text); }
+    #room-select { padding: 40px 20px; align-items: center; justify-content: center; text-align: center; }
+    #room-select h2 { margin-bottom: 8px; color: var(--text); }
+    #room-select p { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px; }
     #room-form { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
     #room-input { width: 120px; padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 1.1rem; text-align: center; background: var(--bg); color: var(--text); }
     #room-btn { padding: 12px 24px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem; }
     #room-btn:hover { background: var(--accent-hover); }
     #join-error { color: #ef4444; margin-top: 12px; font-size: 0.9rem; min-height: 20px; }
 
-    /* Chat UI */
-    header { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--accent); color: white; }
-    header h1 { font-size: 1.25rem; font-weight: 600; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: var(--accent); color: white; flex-wrap: wrap; gap: 8px; }
+    header h1 { font-size: 1.2rem; font-weight: 600; }
+    .badge { padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; background: rgba(0,0,0,0.2); }
+    .badge.temp { background: var(--temp-badge); }
+    .badge.persist { background: var(--persist-badge); }
     #theme-toggle { background: rgba(255,255,255,0.2); border: none; color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
     #theme-toggle:hover { background: rgba(255,255,255,0.3); }
     #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
@@ -57,20 +61,20 @@
   </style>
 </head>
 <body>
-  <!-- Room Selection Screen -->
   <div id="room-select" class="screen">
     <h2>🔢 Enter Room Number</h2>
+    <p>Rooms 1-50: Temporary (cleared on restart)<br>Rooms 51-99: 💾 Saved History</p>
     <form id="room-form">
-      <input type="number" id="room-input" min="2" max="99" required placeholder="2-99" />
+      <input type="number" id="room-input" min="1" max="99" required placeholder="1-99" />
       <button type="submit" id="room-btn">Join Chat</button>
     </form>
     <div id="join-error"></div>
   </div>
 
-  <!-- Main Chat Screen -->
   <div id="app" class="screen hidden">
     <header>
       <h1 id="room-title">💬 Chat Room</h1>
+      <span id="room-badge" class="badge"></span>
       <button id="theme-toggle">🌙 Dark</button>
     </header>
     <div id="messages"></div>
@@ -95,6 +99,7 @@
     const usernameInput = document.getElementById('username');
     const themeToggle = document.getElementById('theme-toggle');
     const roomTitle = document.getElementById('room-title');
+    const roomBadge = document.getElementById('room-badge');
 
     let currentRoom = null;
 
@@ -121,8 +126,9 @@
       const room = roomInput.value.trim();
       joinError.textContent = '';
       
-      if (!/^[2-9]\d?$/.test(room)) {
-        joinError.textContent = '⚠️ Please enter a number between 2 and 99.';
+      const num = parseInt(room);
+      if (!room || isNaN(num) || num < 1 || num > 99) {
+        joinError.textContent = '⚠️ Please enter a number between 1 and 99.';
         return;
       }
 
@@ -131,15 +137,16 @@
     });
 
     // Server confirms room join
-    socket.on('room_joined', ({ room, messages: msgs }) => {
+    socket.on('room_joined', ({ room, messages: msgs, isPersistent }) => {
       currentRoom = room;
       roomTitle.textContent = `💬 Room #${room}`;
       
-      // Switch screens
+      roomBadge.textContent = isPersistent ? '💾 Saved' : '🕒 Temporary';
+      roomBadge.className = `badge ${isPersistent ? 'persist' : 'temp'}`;
+      
       roomSelect.classList.add('hidden');
       app.classList.remove('hidden');
       
-      // Load history
       messages.innerHTML = '';
       msgs.forEach(renderMessage);
       scrollToBottom();
