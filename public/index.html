@@ -10,14 +10,12 @@
       --border: #e2e8f0; --accent: #3b82f6; --accent-hover: #2563eb;
       --msg-bg: #f1f5f9; --shadow: 0 4px 12px rgba(0,0,0,0.08);
       --temp-badge: #f59e0b; --persist-badge: #10b981; --danger: #ef4444;
-      --overlay-bg: rgba(0,0,0,0.6);
     }
     [data-theme="dark"] {
       --bg: #0f172a; --card-bg: #1e293b; --text: #f1f5f9; --text-secondary: #94a3b8;
       --border: #334155; --accent: #60a5fa; --accent-hover: #3b82f6;
       --msg-bg: #334155; --shadow: 0 4px 12px rgba(0,0,0,0.3);
       --temp-badge: #d97706; --persist-badge: #059669; --danger: #f87171;
-      --overlay-bg: rgba(0,0,0,0.8);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; padding: 20px; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
@@ -26,15 +24,16 @@
     .hidden { display: none !important; }
 
     #room-select, #room-waiting { padding: 40px 24px; align-items: center; justify-content: center; text-align: center; }
-    #room-select h2, #room-waiting h2 { margin-bottom: 24px; color: var(--text); }
-    #join-form { display: flex; flex-direction: column; gap: 12px; max-width: 300px; margin: 0 auto; }
-    .input-field { padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 1rem; background: var(--bg); color: var(--text); text-align: center; }
+    #room-select h2, #room-waiting h2 { margin-bottom: 16px; color: var(--text); }
+    .form-block { display: flex; flex-direction: column; gap: 10px; max-width: 300px; margin: 0 auto; width: 100%; }
+    .input-field, select { padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 1rem; background: var(--bg); color: var(--text); text-align: center; }
     .btn { padding: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem; margin-top: 4px; transition: background 0.2s; }
     .btn:hover { background: var(--accent-hover); }
     .btn.connect { background: #10b981; } .btn.connect:hover { background: #059669; }
     .btn.end { background: var(--danger); font-size: 0.85rem; padding: 6px 12px; }
-    #join-error { color: #ef4444; margin-top: 10px; font-size: 0.85rem; min-height: 20px; }
-    .hint { color: var(--text-secondary); font-size: 0.8rem; margin-top: 16px; }
+    .btn.secondary { background: var(--border); color: var(--text); } .btn.secondary:hover { background: #cbd5e1; }
+    #join-error { color: var(--danger); margin-top: 10px; font-size: 0.85rem; min-height: 20px; }
+    .hint { color: var(--text-secondary); font-size: 0.8rem; margin-top: 16px; line-height: 1.4; }
 
     header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: var(--accent); color: white; flex-wrap: wrap; gap: 8px; }
     .header-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -58,16 +57,6 @@
     #send { padding: 10px 18px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; transition: background 0.2s; }
     #send:hover { background: var(--accent-hover); }
     #send:active { transform: scale(0.98); }
-
-    /* Overlay Modal */
-    #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--overlay-bg); display: flex; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(4px); }
-    .modal { background: var(--card-bg); padding: 24px; border-radius: 12px; box-shadow: var(--shadow); max-width: 320px; width: 90%; text-align: center; }
-    .modal h3 { margin-bottom: 16px; color: var(--text); }
-    .modal-form { display: flex; flex-direction: column; gap: 10px; }
-    .modal-btn { padding: 10px; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
-    .modal-close { margin-top: 12px; background: transparent; color: var(--text-secondary); border: none; cursor: pointer; font-size: 0.85rem; }
-    .modal-close:hover { color: var(--text); }
-
     @media (max-width: 600px) {
       .screen { height: 100vh; max-height: none; border-radius: 0; }
       body { padding: 0; }
@@ -78,22 +67,32 @@
   <!-- Join Screen -->
   <div id="room-select" class="screen">
     <h2>🔢 Join a Chat Room</h2>
-    <form id="join-form">
+    <form id="join-form" class="form-block">
       <input type="text" id="name-input" class="input-field" placeholder="Your Name" maxlength="15" required />
       <input type="number" id="room-input" class="input-field" min="1" max="99" required placeholder="Room Number (1-99)" />
+      <input type="password" id="join-pwd" class="input-field hidden" placeholder="🔒 Enter Room Password" maxlength="20" />
       <button type="submit" class="btn">Enter Chat</button>
+      <button type="button" id="back-to-join" class="btn secondary hidden">Cancel Password</button>
     </form>
     <div id="join-error"></div>
-    <p class="hint">Rooms 1-50: 🕒 Temporary (Connect + Settings)<br>Rooms 51-99: 💾 Auto-Saved History</p>
+    <p class="hint">Rooms 1-50: 🕒 Temporary (inline settings)<br>Rooms 51-99: 💾 Auto-Saved History</p>
   </div>
 
-  <!-- Waiting Screen (Temp Rooms) -->
+  <!-- Waiting Screen (Temp Rooms - Inline Creation Settings) -->
   <div id="room-waiting" class="screen hidden">
     <h2>📡 Room #<span id="waiting-room-num"></span></h2>
-    <p id="waiting-msg">This room is offline. Connect to start it.</p>
-    <div id="waiting-controls">
-      <button id="connect-btn" class="btn connect">🔗 Connect Chat</button>
-    </div>
+    <p>This room is offline. Configure and connect to start it.</p>
+    <form id="waiting-form" class="form-block">
+      <input type="password" id="set-pwd" class="input-field" placeholder="🔒 Password (optional)" maxlength="20" />
+      <select id="set-users" class="input-field">
+        <option value="0">No User Limit</option>
+        <option value="5">Max 5 Users</option>
+        <option value="10">Max 10 Users</option>
+        <option value="20">Max 20 Users</option>
+        <option value="50">Max 50 Users</option>
+      </select>
+      <button type="submit" class="btn connect">🔗 Connect Chat</button>
+    </form>
   </div>
 
   <!-- Chat Screen -->
@@ -117,15 +116,6 @@
     </form>
   </div>
 
-  <!-- Overlay Modal -->
-  <div id="overlay" class="hidden">
-    <div class="modal">
-      <h3 id="modal-title">Settings</h3>
-      <div id="modal-content" class="modal-form"></div>
-      <button class="modal-close" id="modal-close">Cancel</button>
-    </div>
-  </div>
-
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
@@ -135,7 +125,10 @@
     const joinForm = document.getElementById('join-form');
     const nameInput = document.getElementById('name-input');
     const roomInput = document.getElementById('room-input');
+    const joinPwdInput = document.getElementById('join-pwd');
+    const backBtn = document.getElementById('back-to-join');
     const joinError = document.getElementById('join-error');
+    const waitingForm = document.getElementById('waiting-form');
     const messages = document.getElementById('messages');
     const chatForm = document.getElementById('form');
     const input = document.getElementById('input');
@@ -145,10 +138,6 @@
     const roomBadge = document.getElementById('room-badge');
     const userCounter = document.getElementById('user-counter');
     const endRoomBtn = document.getElementById('end-room-btn');
-    const overlay = document.getElementById('overlay');
-    const modalTitle = document.getElementById('modal-title');
-    const modalContent = document.getElementById('modal-content');
-    const modalClose = document.getElementById('modal-close');
 
     let currentRoom = null;
     let currentUser = localStorage.getItem('chat-user') || '';
@@ -172,6 +161,7 @@
       e.preventDefault();
       const name = nameInput.value.trim();
       const room = roomInput.value.trim();
+      const pwd = joinPwdInput.value.trim();
       joinError.textContent = '';
 
       if (!name) { joinError.textContent = '⚠️ Enter a display name.'; return; }
@@ -180,72 +170,43 @@
       currentUser = name;
       currentRoom = room;
       localStorage.setItem('chat-user', name);
-      socket.emit('join_room', { room: currentRoom, password: '' });
+      socket.emit('join_room', { room: currentRoom, password: pwd });
     });
 
-    socket.on('join_error', (msg) => {
-      if (msg.includes('Incorrect password')) {
-        showPasswordModal();
-      } else {
-        joinError.textContent = msg;
-      }
+    backBtn.addEventListener('click', () => {
+      joinPwdInput.classList.add('hidden');
+      joinPwdInput.value = '';
+      backBtn.classList.add('hidden');
+      joinError.textContent = '';
     });
 
-    // Temp room waiting
+    socket.on('join_error', (msg) => joinError.textContent = msg);
+
+    socket.on('join_password_required', ({ room }) => {
+      joinPwdInput.classList.remove('hidden');
+      backBtn.classList.remove('hidden');
+      joinPwdInput.focus();
+      joinError.textContent = '🔒 Room is password protected.';
+    });
+
+    // Temp room waiting -> Inline creation
     socket.on('room_waiting', ({ room }) => {
       currentRoom = room;
       document.getElementById('waiting-room-num').textContent = room;
-      document.getElementById('waiting-msg').textContent = 'This room is offline. Connect to start it.';
       roomSelect.classList.add('hidden');
       app.classList.add('hidden');
       roomWaiting.classList.remove('hidden');
-      
-      document.getElementById('waiting-controls').innerHTML = `<button id="connect-btn" class="btn connect">🔗 Connect Chat</button>`;
-      document.getElementById('connect-btn').addEventListener('click', () => showSettingsModal(room));
     });
 
-    // Modal Functions
-    function showModal(title, contentHTML) {
-      modalTitle.textContent = title;
-      modalContent.innerHTML = contentHTML;
-      overlay.classList.remove('hidden');
-    }
-    function hideModal() { overlay.classList.add('hidden'); }
-    modalClose.addEventListener('click', hideModal);
+    waitingForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const pwd = document.getElementById('set-pwd').value.trim();
+      const max = document.getElementById('set-users').value;
+      socket.emit('start_temp_room', { room: currentRoom, password: pwd, maxUsers: max });
+    });
 
-    function showSettingsModal(room) {
-      showModal('🚀 Start Room', `
-        <input type="text" id="set-pwd" class="input-field" placeholder="Password (optional)" maxlength="20" />
-        <input type="number" id="set-users" class="input-field" min="2" max="50" value="10" required />
-        <p style="font-size:0.8rem;color:var(--text-secondary)">Max users: 2-50. Password is optional.</p>
-        <button class="modal-btn" id="confirm-start">Create Room</button>
-      `);
-      document.getElementById('confirm-start').addEventListener('click', () => {
-        const pwd = document.getElementById('set-pwd').value.trim();
-        const max = document.getElementById('set-users').value;
-        hideModal();
-        socket.emit('start_temp_room', { room, password: pwd, maxUsers: max });
-      });
-    }
-
-    function showPasswordModal() {
-      showModal('🔒 Password Required', `
-        <input type="password" id="join-pwd" class="input-field" placeholder="Enter Password" maxlength="20" />
-        <button class="modal-btn" id="confirm-pwd">🔓 Enter</button>
-      `);
-      document.getElementById('confirm-pwd').addEventListener('click', () => {
-        const pwd = document.getElementById('join-pwd').value;
-        hideModal();
-        socket.emit('join_room', { room: currentRoom, password: pwd });
-      });
-    }
-
-    // Room started/joined
-    socket.on('room_started', ({ config }) => {
-      roomMaxUsers = config.maxUsers;
-      userCounter.textContent = `👥 1/${roomMaxUsers}`;
-      hideModal();
-      socket.emit('join_room', { room: currentRoom, password: config.password || '' });
+    socket.on('room_started', () => {
+      socket.emit('join_room', { room: currentRoom, password: '' });
     });
 
     socket.on('room_joined', ({ room, messages: msgs, isPersistent, config }) => {
@@ -254,11 +215,15 @@
       userTag.textContent = currentUser;
       
       roomMaxUsers = config.maxUsers || 0;
-      userCounter.textContent = isPersistent ? `👥 Persistent` : `👥 ?/${roomMaxUsers}`;
+      const limitText = roomMaxUsers === Infinity ? '∞' : roomMaxUsers;
+      userCounter.textContent = isPersistent ? `👥 Persistent` : `👥 ?/${limitText}`;
       roomBadge.textContent = isPersistent ? '💾 Saved' : '🕒 Temporary';
       roomBadge.className = `badge ${isPersistent ? 'persist' : 'temp'}`;
       
       endRoomBtn.classList.toggle('hidden', isPersistent);
+      joinPwdInput.classList.add('hidden');
+      backBtn.classList.add('hidden');
+      joinPwdInput.value = '';
 
       roomWaiting.classList.add('hidden');
       app.classList.remove('hidden');
@@ -269,7 +234,8 @@
     });
 
     socket.on('user_count', (count) => {
-      if (currentRoom && roomMaxUsers) userCounter.textContent = `👥 ${count}/${roomMaxUsers}`;
+      const limit = roomMaxUsers === Infinity ? '∞' : roomMaxUsers;
+      if (currentRoom) userCounter.textContent = `👥 ${count}/${limit}`;
     });
 
     endRoomBtn.addEventListener('click', () => {
@@ -321,8 +287,11 @@
       app.classList.add('hidden');
       roomWaiting.classList.add('hidden');
       roomSelect.classList.remove('hidden');
+      joinPwdInput.classList.add('hidden');
+      backBtn.classList.add('hidden');
+      joinPwdInput.value = '';
+      joinError.textContent = '';
       currentRoom = null;
-      hideModal();
     }
   </script>
 </body>
